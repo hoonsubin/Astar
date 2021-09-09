@@ -146,7 +146,6 @@ impl pallet_dapps_staking::Config for TestRuntime {
     type BlockPerEra = BlockPerEra;
     type BondingDuration = BondingDuration;
     type EraPayout = EraPayoutMock;
-    type EraFinder = EraFinderMock;
     type RegisterDeposit = RegisterDeposit;
     type WeightInfo = ();
     type UnixTime = Timestamp; // TODO see of this can be maybe simplified
