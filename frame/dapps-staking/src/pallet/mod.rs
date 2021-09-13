@@ -171,6 +171,10 @@ pub mod pallet {
         TotalDappsRewards(EraIndex, BalanceOf<T>),
         /// Stake of stash address.
         Stake(T::AccountId),
+        /// New contract added for staking, with deposit value
+        NewContract(SmartContract<T::AccountId>, BalanceOf<T>),
+        /// New dapps staking era. Distribute era rewards to contracts
+        NewDappStakingEra(EraIndex),
     }
 
     #[pallet::error]
@@ -213,8 +217,19 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-        fn on_initialize(_now: BlockNumberFor<T>) -> Weight {
+        fn on_initialize(now: BlockNumberFor<T>) -> Weight {
             // just return the weight of the on_finalize.
+            let force_new_era = Self::force_era().eq(&Forcing::ForceNew);
+
+            if (now % T::BlockPerEra::get()).is_zero() || force_new_era {
+                CurrentEra::<T>::put(0 as EraIndex);
+                Self::distribute_era_rewards();
+            } else {
+                let next_era = Self::current_era().unwrap_or(Zero::zero()) + 1;
+                CurrentEra::<T>::put(next_era);
+                Self::deposit_event(Event::<T>::NewDappStakingEra(next_era));
+            };
+
             T::DbWeight::get().reads(1)
         }
 
@@ -486,7 +501,6 @@ pub mod pallet {
         ///
         /// # <weight>
         /// - Independent of the arguments. Insignificant complexity.
-        /// - Contains one read
         /// - Contains one read.
         /// - Writes are limited to the `origin` account key.
         /// # </weight>
@@ -693,10 +707,10 @@ pub mod pallet {
         /// - Write ForceEra
         /// # </weight>
         #[pallet::weight(T::WeightInfo::force_new_era())]
-        pub fn force_new_era(origin: OriginFor<T>) -> DispatchResult {
+        pub fn force_new_era(origin: OriginFor<T>) -> DispatchResultWithPostInfo {
             ensure_root(origin)?;
             ForceEra::<T>::put(Forcing::ForceNew);
-            Ok(())
+            Ok(().into())
         }
 
         /// Force there to be a new era at the end of blocks indefinitely.
@@ -756,5 +770,25 @@ pub mod pallet {
             //system::Module::<T>::dec_consumers(stash);
             Ok(())
         }
+
+        /// Checks if there is a valid smart contract for the provided address
+        fn is_contract(address: &SmartContract<T::AccountId>) -> bool {
+            match address {
+                SmartContract::Wasm(account) => {
+                    //     <pallet_contracts::ContractInfoOf<T>>::get(&account).is_some()
+                    false
+                }
+                SmartContract::Evm(account) => {
+                    // pallet_evm::Module::<T>::account_codes(&account).len() > 0 TODO remove comment after EVM mege
+                    true
+                }
+            }
+        }
+
+        /// Distribute era's rewards to all registered contracts
+        /// The block rewards are accumulated on the pallets's account during an era
+        ///
+        /// This is called at the end of each Era
+        fn distribute_era_rewards() {}
     }
 }
